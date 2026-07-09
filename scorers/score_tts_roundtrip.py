@@ -9,7 +9,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from score_entities import check_entities, index_by_case_id, load_jsonl, output_text
+try:
+    from .score_entities import check_entities, index_by_case_id, load_jsonl, output_text
+except ImportError:  # pragma: no cover - keeps direct CLI execution working
+    from score_entities import check_entities, index_by_case_id, load_jsonl, output_text
 
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "reports" / "tts_roundtrip_scores.jsonl"

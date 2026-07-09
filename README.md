@@ -7,7 +7,7 @@ v0.1 的目标是验证评估系统本身是否跑得通，不评估真实模型
 本版只证明这条链路可执行：
 
 ```text
-cases -> model outputs or mock outputs -> scorer -> reports -> dashboard
+upload cases/outputs -> validate -> create task -> score -> generate report
 ```
 
 如果没有 API key，先使用模拟输出完成流程验证。只有在接入真实模型、真实或脱敏样本、固定运行配置后，结果才可用于候选模型比较。
@@ -22,6 +22,8 @@ eval_mvp/
   scorers/            # 本地评分脚本
   runs/               # 每次运行的原始模型输出或模拟输出
   reports/            # 汇总报告、操作手册、路线图
+  sample_packages/    # 可直接用于冒烟测试的上传样例
+  scripts/            # 本地验收脚本
 ```
 
 职责边界：
@@ -32,20 +34,25 @@ eval_mvp/
 - `reports/` 放汇总结果、发布材料和人工复核记录。
 - 看板只消费聚合后的报告数据，不直接承担评分逻辑。
 
-## 推荐执行顺序
+## MVP 运行方式
 
-本地依赖已安装在 `eval_mvp/.venv`。运行评分脚本时优先使用：
+本地依赖已安装在 `eval_mvp/.venv`。启动本地 Web MVP：
 
 ```text
-outputs/model_eval_framework/eval_mvp/.venv/bin/python
+./.venv/bin/python app.py --host 127.0.0.1 --port 8766
 ```
 
-1. 准备或更新 `cases/` 下的 STT、TTS、LLM 样本。
-2. 在 `runs/` 下准备本次输出；没有 API key 时使用模拟输出。
-3. 运行 `scorers/` 下的评分脚本，生成指标和失败样本。
-4. 汇总到 `reports/eval_summary.csv` 或同等结构的报告文件。
-5. 更新本地看板数据，让看板展示样本数、失败数、待人工复核数。
-6. 用 `reports/v0.1_model_eval_report_template.md` 形成发布说明。
+执行自动冒烟测试：
+
+```text
+./.venv/bin/python scripts/smoke_test.py --base-url http://127.0.0.1:8766
+```
+
+开发验证：
+
+```text
+./.venv/bin/python -m unittest discover -s tests -v
+```
 
 ## 无 API key 模式
 

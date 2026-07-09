@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模型评估 MVP</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <main>
+    <h1>上传评估材料</h1>
+    <p>选择模型类型，并上传 cases 与 outputs 文件进行校验。</p>
+    <form id="upload-form">
+      <label>模型类型
+        <select name="model_type">
+          <option value="STT">STT</option>
+          <option value="TTS">TTS</option>
+          <option value="LLM">LLM</option>
+        </select>
+      </label>
+      <label>Cases 文件
+        <input type="file" name="cases_file" accept=".jsonl,.csv" required>
+      </label>
+      <label>Outputs 文件
+        <input type="file" name="outputs_file" accept=".jsonl,.csv" required>
+      </label>
+      <button type="submit">上传并校验</button>
+      <button type="button" id="create-task" disabled>创建任务</button>
+    </form>
+    <section aria-live="polite">
+      <p id="upload-result"></p>
+      <ul id="upload-errors"></ul>
+      <ul id="upload-warnings"></ul>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

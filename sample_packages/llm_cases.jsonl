@@ -1,0 +1,1 @@
+{"case_id":"LLM-SMOKE-001","task_type":"structured_extraction","input":"Return order id INV-1 as JSON.","expected":{"order_id":"INV-1"},"assertions":["valid_json","contains_required_fields","exact_match_entities"],"risk_tags":["smoke"]}

@@ -1,0 +1,1 @@
+{"case_id":"TTS-SMOKE-001","scenario":"smoke_tts","language":"en","input_text":"hello Alice","critical_entities":["Alice"],"human_review_required":true,"risk_tags":["smoke"]}

@@ -1,0 +1,1 @@
+{"case_id":"STT-SMOKE-001","scenario":"smoke_stt","language":"en","reference_text":"hello world","critical_entities":["world"],"risk_tags":["smoke"]}
