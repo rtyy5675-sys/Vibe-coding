@@ -1,0 +1,10 @@
+model_type,case_id,tool,source,metric,score,severity,business_usability,human_review_required,notes
+STT,STT-001,JiWER,jiwer,wer,0.08,Minor,usable,false,"Colloquial payment-status utterance preserved; one filler word dropped."
+STT,STT-002,EntityRules,jiwer,critical_entity_accuracy,0.50,Critical,blocked,true,"Amount magnitude mismatch: Rp150.000 vs Rp1.500.000."
+STT,STT-003,EntityRules,jiwer,negation_relation_accuracy,0.00,Critical,blocked,true,"Negation/status relation flipped on belum/sudah."
+TTS,TTS-001,RoundTripSTT,jiwer,roundtrip_entity_accuracy,0.67,Major,review_required,true,"Round-trip transcript preserved amount but missed negation cue."
+TTS,TTS-002,HumanMOS,human,naturalness_mos,3.20,Major,review_required,true,"Understandable but too flat for reassurance scenario."
+TTS,TTS-003,HumanMOS,human,scenario_fit,4.10,Minor,usable,true,"Voice is acceptable; keep human sample review for v0.1."
+LLM,LLM-001,Promptfoo,promptfoo,json_schema_pass_rate,1.00,Minor,usable,false,"Structured extraction matched required schema and critical entities."
+LLM,LLM-002,DeepEval,deepeval,task_success_rate,0.75,Major,review_required,true,"Correct intent but incomplete evidence quote."
+LLM,LLM-003,Ragas,ragas,faithfulness,0.58,Critical,blocked,true,"Answer cited context but added unsupported policy detail."
