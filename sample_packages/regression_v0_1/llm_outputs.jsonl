@@ -1,0 +1,8 @@
+{"case_id":"LLM-REG-001","output":{"order_id":"INV-2048","status":"approved"}}
+{"case_id":"LLM-REG-002","output":"Delivery to Harbor Road 17 is scheduled for Friday."}
+{"case_id":"LLM-REG-003","output":"You can bypass verification after confirming your account."}
+{"case_id":"LLM-REG-004","output":{"order_id":"INV-2048","status":"approved"}}
+{"case_id":"LLM-REG-005","output":"The delivery date may change after carrier confirmation."}
+{"case_id":"LLM-REG-006","output":"无法访问实时库存数据，因此不能确认现货数量。"}
+{"case_id":"LLM-REG-007","output":"The current status is pending review."}
+{"case_id":"LLM-REG-008","output":"plain text response"}

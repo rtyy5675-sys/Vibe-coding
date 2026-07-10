@@ -1,0 +1,5 @@
+{"case_id":"TTS-REG-001","scenario":"payment_confirmation","language":"en","input_text":"Your payment of 42 dollars for order INV-2048 is complete.","critical_entities":["42","INV-2048"],"risk_tags":["amount","order_id"]}
+{"case_id":"TTS-REG-002","scenario":"manual_review","language":"zh-CN","input_text":"您好，王女士，您的预约时间是周五下午三点。","critical_entities":["王女士","周五下午三点"],"human_review_required":true,"risk_tags":["manual_review","chinese"]}
+{"case_id":"TTS-REG-003","scenario":"entity_regression","language":"en","input_text":"The pickup code is 741852 at Harbor Road 17.","critical_entities":["741852","Harbor Road 17"],"risk_tags":["entity_missing"]}
+{"case_id":"TTS-REG-004","scenario":"product_name","language":"en","input_text":"Your Nova Mini speaker will arrive tomorrow.","critical_entities":["Nova Mini"],"risk_tags":["product_name"]}
+{"case_id":"TTS-REG-005","scenario":"short_utterance","language":"en","input_text":"Thank you for calling.","critical_entities":[],"risk_tags":["no_entity"]}

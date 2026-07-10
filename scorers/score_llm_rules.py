@@ -69,7 +69,10 @@ def score_llm_case(case: dict[str, Any], output: dict[str, Any] | None) -> list[
             forbidden_values = [
                 value for value in forbidden_values if value not in (None, "")
             ]
-            passed = not forbidden_values or not _contains_all(output_text, forbidden_values)
+            lowered_output = output_text.casefold()
+            passed = not forbidden_values or not any(
+                str(value).casefold() in lowered_output for value in forbidden_values
+            )
         elif name == "no_hallucinated_entities":
             allowed = {str(value).casefold() for value in expected.values()}
             values = output_object.values() if output_object else []

@@ -122,6 +122,16 @@ node --check static/app.js
 Smoke test: passed
 ```
 
+## 扩展回归测试包
+
+可直接上传运行的合成测试包位于：
+
+```text
+sample_packages/regression_v0_1/
+```
+
+它包含 19 个 STT、TTS、LLM 用例，覆盖实体、结构化输出、人工复核、评分失败、未知断言和缺失 fixture 输出。使用说明及预期任务状态见该目录的 `README.md`。
+
 ## 无 API key 模式
 
 无 API key 时，v0.1 使用模拟输出。

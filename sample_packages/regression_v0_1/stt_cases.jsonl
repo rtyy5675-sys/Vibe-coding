@@ -1,0 +1,6 @@
+{"case_id":"STT-REG-001","scenario":"order_confirmation","language":"en","reference_text":"Order INV-2048 for Alice Chen is confirmed.","critical_entities":["INV-2048","Alice Chen"],"risk_tags":["order_id","person_name"]}
+{"case_id":"STT-REG-002","scenario":"account_security","language":"zh-CN","reference_text":"请将验证码 483921 发送给张伟。","critical_entities":["483921","张伟"],"risk_tags":["verification_code","chinese"]}
+{"case_id":"STT-REG-003","scenario":"product_identifier","language":"en","reference_text":"The replacement part is SKU ZX-2048.","critical_entities":["SKU ZX-2048"],"risk_tags":["sku","stt_alias"]}
+{"case_id":"STT-REG-004","scenario":"entity_regression","language":"en","reference_text":"Ship the package to Harbor Road 17 by Friday.","critical_entities":["Harbor Road 17","Friday"],"risk_tags":["entity_missing"]}
+{"case_id":"STT-REG-005","scenario":"short_utterance","language":"en","reference_text":"Yes, please proceed.","critical_entities":[],"risk_tags":["no_entity"]}
+{"case_id":"STT-REG-006","scenario":"missing_output","language":"en","reference_text":"Cancel order INV-3001.","critical_entities":["INV-3001"],"risk_tags":["missing_output","retry"]}
