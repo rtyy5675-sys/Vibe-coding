@@ -21,7 +21,12 @@ ALLOWED_SUFFIXES = {".jsonl", ".csv"}
 
 
 def _submitted_basename(filename: str) -> str:
-    return secure_filename(Path(filename.replace("\\", "/")).name)
+    return Path(filename.replace("\\", "/")).name
+
+
+def _display_filename(filename: str) -> str:
+    safe_name = secure_filename(filename)
+    return safe_name or filename or "<unnamed>"
 
 
 def _checksum(path: Path) -> str:
@@ -64,7 +69,7 @@ def persist_upload(
         if Path(filename).suffix.lower() not in ALLOWED_SUFFIXES:
             extension_errors.append({
                 "error_code": "INVALID_FILE_TYPE",
-                "filename": filename,
+                "filename": _display_filename(filename),
                 "line": 0,
                 "field": field,
                 "reason": "file must use .jsonl or .csv",

@@ -2,10 +2,14 @@ import json
 import io
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
 from mvp.app import create_app
+from mvp.pipeline import create_task, run_task
+from mvp.storage import Storage
 
 
 class PipelineApiTests(unittest.TestCase):
@@ -47,6 +51,7 @@ class PipelineApiTests(unittest.TestCase):
             status = self.client.get(f"/api/tasks/{task_id}").get_json()
             if status["status"] in {"completed", "partially_completed", "failed"}:
                 return status
+            time.sleep(0.02)
         self.fail("task did not finish")
 
     def test_stt_task_scores_results_and_generates_report_files(self):
@@ -75,6 +80,7 @@ class PipelineApiTests(unittest.TestCase):
         csv_text = csv_path.read_text(encoding="utf-8")
         self.assertIn("wer", csv_text)
         self.assertIn("entity_score", csv_text)
+        self.assertIn("entity_pass", csv_text)
 
     def test_missing_output_becomes_failed_and_retry_does_not_rerun_success(self):
         upload = self._upload(
@@ -102,6 +108,7 @@ class PipelineApiTests(unittest.TestCase):
         self.assertEqual("partially_completed", status["status"])
         self.assertEqual(1, status["counts"]["succeeded"])
         self.assertEqual(1, status["counts"]["failed"])
+        self.assertEqual(2, status["counts"]["review_required"])
 
         with sqlite3.connect(self.root / "data" / "eval_mvp.sqlite") as connection:
             before = dict(
@@ -113,7 +120,11 @@ class PipelineApiTests(unittest.TestCase):
 
         retry = self.client.post(f"/api/tasks/{status['task_id']}/retry")
         self.assertEqual(202, retry.status_code)
-        status_after_retry = self.client.get(f"/api/tasks/{status['task_id']}").get_json()
+        for _ in range(50):
+            status_after_retry = self.client.get(f"/api/tasks/{status['task_id']}").get_json()
+            if status_after_retry["status"] in {"completed", "partially_completed", "failed"}:
+                break
+            time.sleep(0.02)
         self.assertEqual("partially_completed", status_after_retry["status"])
 
         with sqlite3.connect(self.root / "data" / "eval_mvp.sqlite") as connection:
@@ -145,6 +156,67 @@ class PipelineApiTests(unittest.TestCase):
         report = self.client.get(f"/api/tasks/{status['task_id']}/report")
         self.assertEqual(200, report.status_code)
         self.assertIn("valid_json", report.get_data(as_text=True))
+
+    def test_llm_empty_forbidden_steps_passes(self):
+        upload = self._upload(
+            "LLM",
+            [{
+                "case_id": "LLM-1",
+                "task_type": "safety",
+                "input": "Provide a safe answer.",
+                "expected": {"forbidden_steps": []},
+                "assertions": ["does_not_contain_forbidden_steps"],
+            }],
+            [{"case_id": "LLM-1", "output": "Use the documented process."}],
+        )
+
+        status = self._create_and_wait(upload["upload_id"])
+
+        self.assertEqual("completed", status["status"])
+        report = self.client.get(f"/api/tasks/{status['task_id']}/results.csv")
+        self.assertIn("does_not_contain_forbidden_steps", report.get_data(as_text=True))
+        self.assertIn(",1.0,", report.get_data(as_text=True))
+        report.close()
+
+    def test_concurrent_runners_claim_each_item_once(self):
+        cases = [
+            {
+                "case_id": f"STT-{index}",
+                "scenario": "support",
+                "language": "en",
+                "reference_text": "hello world",
+                "critical_entities": ["world"],
+            }
+            for index in range(1, 6)
+        ]
+        outputs = [
+            {"case_id": case["case_id"], "transcript": "hello world"}
+            for case in cases
+        ]
+        upload = self._upload("STT", cases, outputs)
+        storage = Storage(self.root / "data" / "eval_mvp.sqlite")
+        task = create_task(storage, self.root, upload["upload_id"], "fixture")
+        task_id = task["task_id"]
+
+        threads = [
+            threading.Thread(target=run_task, args=(storage, self.root, task_id, False))
+            for _ in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        with sqlite3.connect(self.root / "data" / "eval_mvp.sqlite") as connection:
+            attempts = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT attempt_count FROM task_items WHERE task_id = ?",
+                    (task_id,),
+                )
+            ]
+
+        self.assertEqual([1, 1, 1, 1, 1], sorted(attempts))
 
 
 if __name__ == "__main__":

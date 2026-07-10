@@ -59,11 +59,18 @@ def _task_summary(storage: Storage, task_id: str) -> dict[str, Any] | None:
         ).fetchone()
         review_required = connection.execute(
             """
-            SELECT COUNT(DISTINCT case_id) AS review_required
-            FROM results
-            WHERE task_id = ? AND human_review_required = 1
+            SELECT COUNT(*) AS review_required
+            FROM (
+                SELECT case_id
+                FROM results
+                WHERE task_id = ? AND human_review_required = 1
+                UNION
+                SELECT case_id
+                FROM task_items
+                WHERE task_id = ? AND status = 'failed'
+            )
             """,
-            (task_id,),
+            (task_id, task_id),
         ).fetchone()["review_required"]
         report = connection.execute(
             "SELECT status, html_path, csv_path FROM reports WHERE task_id = ?",
@@ -74,6 +81,14 @@ def _task_summary(storage: Storage, task_id: str) -> dict[str, Any] | None:
     counts["review_required"] = int(review_required or 0)
     finished = counts["succeeded"] + counts["failed"]
     progress = int((finished / counts["total"]) * 100) if counts["total"] else 0
+    report_ready = bool(
+        report
+        and report["status"] == "ready"
+        and report["html_path"]
+        and report["csv_path"]
+        and Path(report["html_path"]).is_file()
+        and Path(report["csv_path"]).is_file()
+    )
     return {
         "task_id": task_id,
         "model_type": task["model_type"],
@@ -81,14 +96,34 @@ def _task_summary(storage: Storage, task_id: str) -> dict[str, Any] | None:
         "status": task["status"],
         "progress": progress,
         "counts": counts,
-        "report_status": report["status"] if report else "pending",
-        "report_path": report["html_path"] if report else None,
-        "csv_path": report["csv_path"] if report else None,
+        "report_status": "ready" if report_ready else "pending",
+        "report_path": report["html_path"] if report_ready else None,
+        "csv_path": report["csv_path"] if report_ready else None,
     }
 
 
 def get_task(storage: Storage, task_id: str) -> dict[str, Any] | None:
     return _task_summary(storage, task_id)
+
+
+def list_recent_tasks(storage: Storage, limit: int = 20) -> list[dict[str, Any]]:
+    with storage.connect() as connection:
+        connection.row_factory = lambda cursor, row: {
+            column[0]: row[index] for index, column in enumerate(cursor.description)
+        }
+        rows = connection.execute(
+            """
+            SELECT
+                t.task_id, t.model_type, t.status, t.created_at,
+                COALESCE(r.status, 'pending') AS report_status
+            FROM tasks t
+            LEFT JOIN reports r ON r.task_id = t.task_id
+            ORDER BY t.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return list(rows)
 
 
 def create_task(storage: Storage, runtime_root: Path, upload_id: str, runner_mode: str) -> dict[str, Any]:
@@ -137,7 +172,6 @@ def create_task(storage: Storage, runtime_root: Path, upload_id: str, runner_mod
             [(task_id, str(case["case_id"]), "pending", 0, None) for case in cases],
         )
 
-    run_task(storage, runtime_root, task_id, retry=False)
     summary = _task_summary(storage, task_id)
     return summary if summary is not None else {"task_id": task_id, "status": "queued"}
 
@@ -146,19 +180,22 @@ def _store_result(
     connection,
     task_id: str,
     case_id: str,
+    dataset_version: str,
     metric: str,
     score: float | None,
     severity: str,
     business_usability: str,
     human_review_required: bool,
+    run_status: str,
     notes: str = "",
 ) -> None:
     connection.execute(
         """
         INSERT INTO results (
             result_id, task_id, case_id, metric, score, severity, business_usability,
-            human_review_required, scorer, scorer_version, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            human_review_required, scorer, scorer_version, dataset_version,
+            run_status, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             uuid.uuid4().hex,
@@ -171,9 +208,67 @@ def _store_result(
             1 if human_review_required else 0,
             SCORER_VERSION,
             SCORER_VERSION,
+            dataset_version,
+            run_status,
             notes,
         ),
     )
+
+
+def _claim_item(
+    connection,
+    task_id: str,
+    case_id: str,
+    allowed_statuses: tuple[str, ...],
+) -> bool:
+    placeholders = ",".join("?" for _ in allowed_statuses)
+    cursor = connection.execute(
+        """
+        UPDATE task_items
+        SET status = 'running', attempt_count = attempt_count + 1,
+            error_message = NULL, started_at = ?
+        WHERE task_id = ? AND case_id = ? AND status IN (%s)
+        """ % placeholders,
+        (_now(), task_id, case_id, *allowed_statuses),
+    )
+    return cursor.rowcount == 1
+
+
+def _start_task_run(connection, task_id: str, retry: bool) -> bool:
+    allowed_statuses = (
+        ("queued", "partially_completed", "failed")
+        if retry
+        else ("queued",)
+    )
+    placeholders = ",".join("?" for _ in allowed_statuses)
+    cursor = connection.execute(
+        """
+        UPDATE tasks
+        SET status = ?, started_at = COALESCE(started_at, ?)
+        WHERE task_id = ? AND status IN (%s)
+        """ % placeholders,
+        ("running", _now(), task_id, *allowed_statuses),
+    )
+    return cursor.rowcount == 1
+
+
+def claim_retry_task(storage: Storage, task_id: str) -> str | None:
+    with storage.connect() as connection:
+        row = connection.execute(
+            "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
+        ).fetchone()
+        if row is None or row[0] not in {"partially_completed", "failed"}:
+            return None
+        next_status = "queued" if row[0] == "failed" else "running"
+        cursor = connection.execute(
+            """
+            UPDATE tasks
+            SET status = ?, started_at = COALESCE(started_at, ?)
+            WHERE task_id = ? AND status IN (?, ?)
+            """,
+            (next_status, _now(), task_id, "partially_completed", "failed"),
+        )
+    return next_status if cursor.rowcount == 1 else None
 
 
 def _score_case(model_type: str, case: dict[str, Any], output: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -186,6 +281,13 @@ def _score_case(model_type: str, case: dict[str, Any], output: dict[str, Any] | 
             {"metric": "wer", "score": score["wer"], "passed": score["wer"] == 0, "review": False, "notes": ""},
             {"metric": "cer", "score": score["cer"], "passed": score["cer"] == 0, "review": False, "notes": ""},
             {
+                "metric": "entity_pass",
+                "score": 1.0 if score["entity_pass"] else 0.0,
+                "passed": bool(score["entity_pass"]),
+                "review": failed_entity,
+                "notes": json.dumps(score["missing_entities"], ensure_ascii=False),
+            },
+            {
                 "metric": "entity_score",
                 "score": score["entity_score"],
                 "passed": bool(score["entity_pass"]),
@@ -196,13 +298,22 @@ def _score_case(model_type: str, case: dict[str, Any], output: dict[str, Any] | 
     if model_type == "TTS":
         score = score_tts_roundtrip([case], [output])[0]
         review = bool(case.get("human_review_required")) or not bool(score["entity_pass"])
-        return [{
-            "metric": "entity_score",
-            "score": score["entity_score"],
-            "passed": bool(score["entity_pass"]),
-            "review": review,
-            "notes": json.dumps(score["missing_entities"], ensure_ascii=False),
-        }]
+        return [
+            {
+                "metric": "entity_pass",
+                "score": 1.0 if score["entity_pass"] else 0.0,
+                "passed": bool(score["entity_pass"]),
+                "review": review,
+                "notes": json.dumps(score["missing_entities"], ensure_ascii=False),
+            },
+            {
+                "metric": "entity_score",
+                "score": score["entity_score"],
+                "passed": bool(score["entity_pass"]),
+                "review": review,
+                "notes": json.dumps(score["missing_entities"], ensure_ascii=False),
+            },
+        ]
     if model_type == "LLM":
         return [
             {**item, "review": not item["passed"]}
@@ -211,7 +322,13 @@ def _score_case(model_type: str, case: dict[str, Any], output: dict[str, Any] | 
     raise ValueError("unsupported model_type")
 
 
-def run_task(storage: Storage, runtime_root: Path, task_id: str, retry: bool) -> None:
+def run_task(
+    storage: Storage,
+    runtime_root: Path,
+    task_id: str,
+    retry: bool,
+    already_started: bool = False,
+) -> None:
     with storage.connect() as connection:
         connection.row_factory = lambda cursor, row: {
             column[0]: row[index] for index, column in enumerate(cursor.description)
@@ -228,6 +345,8 @@ def run_task(storage: Storage, runtime_root: Path, task_id: str, retry: bool) ->
             raise LookupError("task not found")
         if task["status"] in {"completed"} and not retry:
             return
+        if not already_started and not _start_task_run(connection, task_id, retry):
+            return
         item_statuses = ("pending", "failed") if retry else ("pending",)
         items = connection.execute(
             "SELECT * FROM task_items WHERE task_id = ? AND status IN (%s) ORDER BY case_id" % (
@@ -235,10 +354,6 @@ def run_task(storage: Storage, runtime_root: Path, task_id: str, retry: bool) ->
             ),
             (task_id, *item_statuses),
         ).fetchall()
-        connection.execute(
-            "UPDATE tasks SET status = ?, started_at = COALESCE(started_at, ?) WHERE task_id = ?",
-            ("running", _now(), task_id),
-        )
 
     cases = _load_jsonl(task["canonical_cases_path"])
     outputs = _load_jsonl(task["canonical_outputs_path"])
@@ -248,15 +363,9 @@ def run_task(storage: Storage, runtime_root: Path, task_id: str, retry: bool) ->
     for item in items:
         case_id = item["case_id"]
         with storage.connect() as connection:
-            connection.execute(
-                """
-                UPDATE task_items
-                SET status = 'running', attempt_count = attempt_count + 1,
-                    error_message = NULL, started_at = ?
-                WHERE task_id = ? AND case_id = ?
-                """,
-                (_now(), task_id, case_id),
-            )
+            claimed = _claim_item(connection, task_id, case_id, item_statuses)
+        if not claimed:
+            continue
         try:
             score_rows = _score_case(task["model_type"], case_index[case_id], output_index.get(case_id))
             with storage.connect() as connection:
@@ -270,11 +379,13 @@ def run_task(storage: Storage, runtime_root: Path, task_id: str, retry: bool) ->
                         connection,
                         task_id,
                         case_id,
+                        task["dataset_version"],
                         str(score["metric"]),
                         score.get("score"),
                         "info" if passed else "major",
                         "usable" if passed else "review_required",
                         bool(score.get("review")),
+                        "succeeded",
                         str(score.get("notes", "")),
                     )
                 connection.execute(
@@ -317,8 +428,62 @@ def run_task(storage: Storage, runtime_root: Path, task_id: str, retry: bool) ->
     generate_report(storage, runtime_root, task_id)
 
 
+def recover_interrupted_tasks(storage: Storage) -> None:
+    with storage.connect() as connection:
+        task_ids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT task_id FROM task_items WHERE status = 'running'"
+            )
+        ]
+        if not task_ids:
+            return
+        connection.execute(
+            """
+            UPDATE task_items
+            SET status = 'failed',
+                error_message = COALESCE(error_message, 'interrupted before completion'),
+                completed_at = COALESCE(completed_at, ?)
+            WHERE status = 'running'
+            """,
+            (_now(),),
+        )
+        for task_id in task_ids:
+            succeeded, failed = connection.execute(
+                """
+                SELECT SUM(status = 'succeeded'), SUM(status = 'failed')
+                FROM task_items WHERE task_id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+            status = "partially_completed" if succeeded and failed else "failed"
+            connection.execute(
+                "UPDATE tasks SET status = ?, completed_at = ? WHERE task_id = ?",
+                (status, _now(), task_id),
+            )
+
+
+def retry_report(storage: Storage, runtime_root: Path, task_id: str) -> dict[str, Any]:
+    summary = _task_summary(storage, task_id)
+    if summary is None:
+        raise LookupError("task not found")
+    if summary["status"] not in {"completed", "partially_completed", "failed"}:
+        raise ValueError("report cannot be retried from " + summary["status"])
+    generate_report(storage, runtime_root, task_id)
+    return _task_summary(storage, task_id) or summary
+
+
 def retry_task(storage: Storage, runtime_root: Path, task_id: str) -> dict[str, Any]:
-    run_task(storage, runtime_root, task_id, retry=True)
+    claimed_status = claim_retry_task(storage, task_id)
+    if claimed_status is None:
+        raise ValueError("task cannot be retried")
+    run_task(
+        storage,
+        runtime_root,
+        task_id,
+        retry=True,
+        already_started=claimed_status == "running",
+    )
     summary = _task_summary(storage, task_id)
     if summary is None:
         raise LookupError("task not found")

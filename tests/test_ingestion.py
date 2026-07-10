@@ -85,7 +85,7 @@ class ValidateFilesTests(unittest.TestCase):
         duplicate = next(
             error
             for error in result["errors"]
-            if error["error_code"] == "DUPLICATE_CASE_ID"
+            if error["error_code"] == "DUPLICATE_OUTPUT_CASE_ID"
         )
         self.assertEqual("invalid", result["status"])
         self.assertEqual("outputs.jsonl", duplicate["filename"])
@@ -228,6 +228,29 @@ class ValidateFilesTests(unittest.TestCase):
                     )
                 )
 
+    def test_wrong_required_type_uses_spec_error_code(self):
+        cases = self.write_jsonl(
+            "cases.jsonl",
+            [{
+                "case_id": "STT-1",
+                "scenario": "support",
+                "language": "en",
+                "reference_text": "hello",
+                "critical_entities": "Alice",
+            }],
+        )
+        outputs = self.write_jsonl("outputs.jsonl", [])
+
+        result = validate_files("STT", cases, outputs)
+
+        self.assertTrue(
+            any(
+                error["error_code"] == "INVALID_FIELD_TYPE"
+                and error["field"] == "critical_entities"
+                for error in result["errors"]
+            )
+        )
+
     def test_csv_rejects_blank_duplicate_headers_and_bad_quoting(self):
         outputs = self.write_jsonl("outputs.jsonl", [])
         examples = {
@@ -274,7 +297,7 @@ class ValidateFilesTests(unittest.TestCase):
 
         self.assertTrue(
             any(
-                error["error_code"] == "INVALID_TYPE"
+                error["error_code"] == "INVALID_FIELD_TYPE"
                 and error["field"] == "critical_entities"
                 for error in result["errors"]
             )

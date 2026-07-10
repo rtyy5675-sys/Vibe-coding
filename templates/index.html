@@ -8,8 +8,8 @@
 </head>
 <body>
   <main>
-    <h1>上传评估材料</h1>
-    <p>选择模型类型，并上传 cases 与 outputs 文件进行校验。</p>
+    <h1>模型评估平台 v0.1</h1>
+    <p>上传 cases 与 outputs，校验通过后创建 fixture 评估任务。</p>
     <form id="upload-form">
       <label>模型类型
         <select name="model_type">
@@ -29,8 +29,22 @@
     </form>
     <section aria-live="polite">
       <p id="upload-result"></p>
+      <p id="task-status"></p>
       <ul id="upload-errors"></ul>
       <ul id="upload-warnings"></ul>
+    </section>
+    <section>
+      <h2>最近任务</h2>
+      <ul id="recent-tasks">
+        {% for task in recent_tasks %}
+          <li>
+            <a href="{{ url_for('task_page', task_id=task.task_id) }}">{{ task.task_id }}</a>
+            · {{ task.model_type }} · {{ task.status }} · report: {{ task.report_status }}
+          </li>
+        {% else %}
+          <li>暂无任务</li>
+        {% endfor %}
+      </ul>
     </section>
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

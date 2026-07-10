@@ -38,6 +38,19 @@ class StorageTests(unittest.TestCase):
 
         self.assertEqual(["task_id", "case_id"], primary_key)
 
+    def test_results_has_spec_traceability_columns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = Storage(Path(temp_dir) / "eval.sqlite")
+            storage.initialize()
+            with storage.connect() as connection:
+                columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(results)")
+                }
+
+        self.assertIn("dataset_version", columns)
+        self.assertIn("run_status", columns)
+
     def test_storage_connect_enforces_foreign_keys(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = Storage(Path(temp_dir) / "eval.sqlite")

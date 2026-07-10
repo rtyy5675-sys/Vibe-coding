@@ -65,7 +65,11 @@ def score_llm_case(case: dict[str, Any], output: dict[str, Any] | None) -> list[
             passed = _contains_all(output_text, facts)
         elif name == "does_not_contain_forbidden_steps":
             forbidden = expected.get("forbidden_steps", [])
-            passed = not _contains_all(output_text, forbidden if isinstance(forbidden, list) else [forbidden])
+            forbidden_values = forbidden if isinstance(forbidden, list) else [forbidden]
+            forbidden_values = [
+                value for value in forbidden_values if value not in (None, "")
+            ]
+            passed = not forbidden_values or not _contains_all(output_text, forbidden_values)
         elif name == "no_hallucinated_entities":
             allowed = {str(value).casefold() for value in expected.values()}
             values = output_object.values() if output_object else []

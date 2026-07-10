@@ -206,7 +206,7 @@ def _validate_required(
         elif not isinstance(record[field], expected_type):
             errors.append(
                 _issue(
-                    "INVALID_TYPE",
+                    "INVALID_FIELD_TYPE",
                     path,
                     line,
                     field,
@@ -308,7 +308,7 @@ def validate_files(model_type: str, cases_path: Path, outputs_path: Path) -> Dic
         if case_id in seen_output_ids:
             errors.append(
                 _issue(
-                    "DUPLICATE_CASE_ID",
+                    "DUPLICATE_OUTPUT_CASE_ID",
                     outputs_path,
                     line,
                     "case_id",

@@ -86,6 +86,14 @@ def check_report(base_url: str, task_id: str) -> None:
                 raise RuntimeError(f"{suffix} not available for {task_id}")
 
 
+def check_task_page(base_url: str, task_id: str) -> None:
+    request = urllib.request.Request(base_url.rstrip("/") + f"/tasks/{task_id}")
+    with urllib.request.urlopen(request, timeout=10) as response:
+        content = response.read().decode("utf-8")
+        if response.status != 200 or task_id not in content or "results.csv" not in content:
+            raise RuntimeError(f"task page not available for {task_id}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:8766")
@@ -103,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             task_id = create_task(args.base_url, upload_id)
             wait_for_report(args.base_url, task_id)
             check_report(args.base_url, task_id)
+            check_task_page(args.base_url, task_id)
     except (RuntimeError, urllib.error.URLError) as exc:
         print(f"Smoke test: failed: {exc}", file=sys.stderr)
         return 1

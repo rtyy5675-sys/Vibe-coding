@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS results (
     human_review_required INTEGER NOT NULL,
     scorer TEXT NOT NULL,
     scorer_version TEXT NOT NULL,
+    dataset_version TEXT NOT NULL,
+    run_status TEXT NOT NULL,
     notes TEXT,
     FOREIGN KEY (task_id, case_id) REFERENCES task_items(task_id, case_id)
 );
@@ -98,3 +100,15 @@ class Storage:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(results)")
+            }
+            if "dataset_version" not in columns:
+                connection.execute(
+                    "ALTER TABLE results ADD COLUMN dataset_version TEXT NOT NULL DEFAULT ''"
+                )
+            if "run_status" not in columns:
+                connection.execute(
+                    "ALTER TABLE results ADD COLUMN run_status TEXT NOT NULL DEFAULT ''"
+                )

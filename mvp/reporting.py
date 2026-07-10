@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import html
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,7 +35,12 @@ def _fetch_rows(storage: Storage, task_id: str) -> tuple[dict[str, Any], list[di
             column[0]: row[index] for index, column in enumerate(cursor.description)
         }
         task = connection.execute(
-            "SELECT * FROM tasks WHERE task_id = ?",
+            """
+            SELECT t.*, d.canonical_cases_path
+            FROM tasks t
+            JOIN datasets d ON d.dataset_version = t.dataset_version
+            WHERE t.task_id = ?
+            """,
             (task_id,),
         ).fetchone()
         items = connection.execute(
@@ -43,10 +49,9 @@ def _fetch_rows(storage: Storage, task_id: str) -> tuple[dict[str, Any], list[di
         ).fetchall()
         results = connection.execute(
             """
-            SELECT r.*, t.model_type, t.dataset_version, i.status AS run_status
+            SELECT r.*, t.model_type
             FROM results r
             JOIN tasks t ON t.task_id = r.task_id
-            JOIN task_items i ON i.task_id = r.task_id AND i.case_id = r.case_id
             WHERE r.task_id = ?
             ORDER BY r.case_id, r.metric
             """,
@@ -57,8 +62,29 @@ def _fetch_rows(storage: Storage, task_id: str) -> tuple[dict[str, Any], list[di
     return task, items, results
 
 
+def _load_cases_by_id(path: str) -> dict[str, dict[str, Any]]:
+    cases = {}
+    with Path(path).open("r", encoding="utf-8") as source:
+        for line in source:
+            if line.strip():
+                record = json.loads(line)
+                cases[str(record["case_id"])] = record
+    return cases
+
+
+def _count_by(values: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return "\n".join(
+        "<li>%s: %s</li>" % (html.escape(key), count)
+        for key, count in sorted(counts.items())
+    )
+
+
 def generate_report(storage: Storage, runtime_root: Path, task_id: str) -> dict[str, str]:
     task, items, results = _fetch_rows(storage, task_id)
+    cases_by_id = _load_cases_by_id(task["canonical_cases_path"])
     report_dir = runtime_root / "reports" / "generated" / task_id
     report_dir.mkdir(parents=True, exist_ok=True)
     csv_path = report_dir / "results.csv"
@@ -100,6 +126,14 @@ def generate_report(storage: Storage, runtime_root: Path, task_id: str) -> dict[
     coverage = round((len(covered_cases) / total) * 100, 2) if total else 0
     major_rows = [row for row in csv_rows if row.get("severity") in {"critical", "major"}]
     metrics = sorted({str(row.get("metric", "")) for row in csv_rows if row.get("metric")})
+    scenario_items = _count_by([
+        str(cases_by_id.get(str(item["case_id"]), {}).get("scenario", "unknown"))
+        for item in items
+    ])
+    severity_items = _count_by([
+        str(row.get("severity") or "unknown")
+        for row in csv_rows
+    ])
 
     detail_items = "\n".join(
         "<li>%s · %s · %s</li>" % (
@@ -119,6 +153,7 @@ def generate_report(storage: Storage, runtime_root: Path, task_id: str) -> dict[
 <p>generated_at: {html.escape(generated_at)}</p>
 <p>model_type: {html.escape(task['model_type'])}</p>
 <p>dataset_version: {html.escape(task['dataset_version'])}</p>
+<p>scorer: {html.escape(task['scorer_version'])}</p>
 <p>scorer_version: {html.escape(task['scorer_version'])}</p>
 <p>fixture 模式结果仅用于验证评估链路，不代表真实模型质量结论。</p>
 <table border="1">
@@ -127,6 +162,10 @@ def generate_report(storage: Storage, runtime_root: Path, task_id: str) -> dict[
 </table>
 <h2>Critical / Major 明细</h2>
 <ul>{detail_items}</ul>
+<h2>Scenario 汇总</h2>
+<ul>{scenario_items}</ul>
+<h2>Severity 汇总</h2>
+<ul>{severity_items}</ul>
 <h2>指标汇总</h2>
 <p>{html.escape(', '.join(metrics))}</p>
 </body>

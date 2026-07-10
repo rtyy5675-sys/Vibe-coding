@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务 {{ task_id }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <main>
+    <p><a href="{{ url_for('index') }}">返回首页</a></p>
+    {% if task %}
+      <h1>任务 {{ task.task_id }}</h1>
+      <dl>
+        <dt>模型类型</dt><dd>{{ task.model_type }}</dd>
+        <dt>状态</dt><dd>{{ task.status }}</dd>
+        <dt>进度</dt><dd>{{ task.progress }}%</dd>
+        <dt>数据集版本</dt><dd>{{ task.dataset_version }}</dd>
+        <dt>报告状态</dt><dd>{{ task.report_status }}</dd>
+      </dl>
+      <h2>计数</h2>
+      <ul>
+        <li>total: {{ task.counts.total }}</li>
+        <li>succeeded: {{ task.counts.succeeded }}</li>
+        <li>failed: {{ task.counts.failed }}</li>
+        <li>review_required: {{ task.counts.review_required }}</li>
+      </ul>
+      {% if task.report_status == "ready" %}
+        <p><a href="{{ url_for('task_report', task_id=task.task_id) }}">打开 HTML 报告</a></p>
+        <p><a href="{{ url_for('task_results_csv', task_id=task.task_id) }}">下载 results.csv</a></p>
+      {% else %}
+        <p>报告尚未生成。</p>
+        {% if task.status in ["completed", "partially_completed", "failed"] %}
+          <button type="button" id="retry-report" data-task-id="{{ task.task_id }}">重新生成报告</button>
+        {% endif %}
+      {% endif %}
+      {% if task.status in ["partially_completed", "failed"] %}
+        <button type="button" id="retry-task" data-task-id="{{ task.task_id }}">重试失败样本</button>
+        <p id="retry-status" aria-live="polite"></p>
+      {% endif %}
+    {% else %}
+      <h1>任务不存在</h1>
+      <p>{{ task_id }} 不存在。</p>
+    {% endif %}
+  </main>
+  {% if task %}
+    <script>
+      const retryButton = document.querySelector("#retry-task");
+      const retryReportButton = document.querySelector("#retry-report");
+      const retryStatus = document.querySelector("#retry-status");
+      const terminalStates = ["completed", "partially_completed", "failed", "cancelled"];
+      if (!terminalStates.includes("{{ task.status }}")) {
+        window.setTimeout(() => window.location.reload(), 1500);
+      }
+      if (retryButton) {
+        retryButton.addEventListener("click", async () => {
+        retryButton.disabled = true;
+        retryStatus.textContent = "正在提交重试…";
+        try {
+          const response = await fetch("/api/tasks/{{ task.task_id }}/retry", {method: "POST"});
+          const payload = await response.json();
+          if (!response.ok) {
+            retryStatus.textContent = payload.message || "重试失败";
+            retryButton.disabled = false;
+            return;
+          }
+          retryStatus.textContent = "重试已提交，正在刷新…";
+          window.location.reload();
+        } catch {
+          retryStatus.textContent = "重试失败，请确认本地服务正在运行后重试。";
+          retryButton.disabled = false;
+        }
+        });
+      }
+      if (retryReportButton) {
+        retryReportButton.addEventListener("click", async () => {
+          retryReportButton.disabled = true;
+          try {
+            const response = await fetch("/api/tasks/{{ task.task_id }}/report/retry", {method: "POST"});
+            if (response.ok) {
+              window.setTimeout(() => window.location.reload(), 500);
+              return;
+            }
+            retryReportButton.disabled = false;
+          } catch {
+            retryReportButton.disabled = false;
+          }
+        });
+      }
+    </script>
+  {% endif %}
+</body>
+</html>

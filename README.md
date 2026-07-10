@@ -54,6 +54,74 @@ eval_mvp/
 ./.venv/bin/python -m unittest discover -s tests -v
 ```
 
+## 浏览器操作流程
+
+启动服务后打开：
+
+```text
+http://127.0.0.1:8766/
+```
+
+平台 v0.1 支持这条本地闭环：
+
+```text
+上传 cases/outputs
+→ 校验通过
+→ 创建 fixture 任务
+→ 打开任务详情页
+→ 查看状态、进度、失败数和待复核数
+→ 打开 HTML 报告
+→ 下载 results.csv
+```
+
+任务详情页路径：
+
+```text
+/tasks/<task_id>
+```
+
+报告与明细接口：
+
+```text
+/api/tasks/<task_id>/report
+/api/tasks/<task_id>/results.csv
+```
+
+若任务已完成但报告文件未生成，可在任务详情页点击“重新生成报告”，或调用：
+
+```text
+POST /api/tasks/<task_id>/report/retry
+```
+
+## 提交前验收
+
+提交前必须确认以下命令全部通过：
+
+```text
+./.venv/bin/python -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/tmp/eval_mvp_pycache ./.venv/bin/python -m compileall mvp tests app.py
+node --check static/app.js
+./.venv/bin/python app.py --help
+```
+
+端口级 smoke test 需要两个终端。终端 1：
+
+```text
+./.venv/bin/python app.py --host 127.0.0.1 --port 8766
+```
+
+终端 2：
+
+```text
+./.venv/bin/python scripts/smoke_test.py --base-url http://127.0.0.1:8766
+```
+
+预期输出：
+
+```text
+Smoke test: passed
+```
+
 ## 无 API key 模式
 
 无 API key 时，v0.1 使用模拟输出。
